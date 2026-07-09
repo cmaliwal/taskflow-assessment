@@ -124,7 +124,21 @@ def main() -> None:
     message = build_message(prompt, diff, pr_title)
 
     logger.info("Sending diff (%d added lines) to Gemini for review...", added_lines)
-    review = call_gemini(api_key, message)
+    try:
+        review = call_gemini(api_key, message)
+    except Exception:
+        logger.exception("Gemini review failed -- writing infra-error notice")
+        with open(OUTPUT_FILE, "w") as f:
+            f.write(
+                "## Gemini Review -- Infrastructure Error\n\n"
+                "The Gemini API call failed after all retries. "
+                "Check the [workflow run logs]"
+                f"(https://github.com/{os.environ.get('GITHUB_REPOSITORY', '')}/actions) "
+                "for details.\n\n"
+                "Push a new commit to retry."
+            )
+        write_github_env("HAS_BLOCKING", "false")
+        return
 
     with open(OUTPUT_FILE, "w") as f:
         f.write(review)
