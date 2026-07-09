@@ -12,10 +12,11 @@ Environment variables (all required):
 
 import logging
 import os
+import re
 import sys
 import time
 
-import google.generativeai as genai
+from google import genai
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,7 @@ DIFF_FILE = "/tmp/pr.diff"
 OUTPUT_FILE = "/tmp/gemini_review.md"
 MODEL = "gemini-2.0-flash"
 MAX_RETRIES = 3
+DEFAULT_RETRY_WAIT = 60
 
 
 def load_prompt() -> str:
@@ -47,30 +49,42 @@ def load_diff() -> str:
 
 
 def build_message(prompt: str, diff: str, pr_title: str) -> str:
-    return (
-        f"{prompt}\n\n"
-        f"## Pull request title\n\n{pr_title}\n\n"
-        f"## Diff\n\n```diff\n{diff}\n```"
-    )
+    return f"{prompt}\n\n## Pull request title\n\n{pr_title}\n\n## Diff\n\n```diff\n{diff}\n```"
+
+
+def _extract_retry_after(error_message: str) -> float:
+    """Parse the suggested retry delay from a RESOURCE_EXHAUSTED error message."""
+    match = re.search(r"retry in ([\d.]+)s", error_message)
+    if match:
+        return float(match.group(1)) + 5.0
+    return DEFAULT_RETRY_WAIT
 
 
 def call_gemini(api_key: str, message: str) -> str:
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(MODEL)
+    client = genai.Client(api_key=api_key)
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             logger.info("Calling Gemini API (attempt %d/%d)...", attempt, MAX_RETRIES)
-            response = model.generate_content(message)
-            return response.text
-        except Exception:
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=message,
+            )
+            return response.text  # type: ignore[return-value]
+        except Exception as exc:
             logger.exception("Gemini API call failed on attempt %d", attempt)
             if attempt < MAX_RETRIES:
-                wait = 2 ** attempt
-                logger.info("Retrying in %d seconds...", wait)
+                wait = _extract_retry_after(str(exc))
+                logger.info("Retrying in %.1f seconds...", wait)
                 time.sleep(wait)
 
     raise RuntimeError("All Gemini API retries exhausted")
+
+
+def write_github_env(key: str, value: str) -> None:
+    github_env = os.environ.get("GITHUB_ENV", "/dev/null")
+    with open(github_env, "a") as f:
+        f.write(f"{key}={value}\n")
 
 
 def main() -> None:
@@ -85,14 +99,14 @@ def main() -> None:
     diff = load_diff()
 
     if not diff.strip():
-        logger.info("Empty diff — skipping review")
+        logger.info("Empty diff -- skipping review")
         with open(OUTPUT_FILE, "w") as f:
             f.write("No code changes detected in this pull request.")
         return
 
     if added_lines > MAX_REVIEW_LINES:
         logger.warning(
-            "PR adds %d lines (limit %d) — posting size warning",
+            "PR adds %d lines (limit %d) -- posting size warning",
             added_lines,
             MAX_REVIEW_LINES,
         )
@@ -101,32 +115,24 @@ def main() -> None:
                 f"**Must fix**\n\n"
                 f"- **PR too large to review effectively** -- {added_lines} added lines "
                 f"(limit {MAX_REVIEW_LINES}, excluding migrations, lockfiles, and docs). "
-                f"Split into smaller, independently reviewable pull requests. "
-                f"(`PR size`)"
+                f"Split into smaller, independently reviewable pull requests. (`PR size`)"
             )
-        with open(os.environ.get("GITHUB_ENV", "/dev/null"), "a") as env_file:
-            env_file.write("HAS_BLOCKING=true\n")
+        write_github_env("HAS_BLOCKING", "true")
         return
 
     prompt = load_prompt()
     message = build_message(prompt, diff, pr_title)
 
-    logger.info(
-        "Sending diff (%d added lines) to Gemini for review...", added_lines
-    )
+    logger.info("Sending diff (%d added lines) to Gemini for review...", added_lines)
     review = call_gemini(api_key, message)
 
     with open(OUTPUT_FILE, "w") as f:
         f.write(review)
 
     has_blocking = "**Must fix**" in review
-    github_env = os.environ.get("GITHUB_ENV", "/dev/null")
-    with open(github_env, "a") as env_file:
-        env_file.write(f"HAS_BLOCKING={'true' if has_blocking else 'false'}\n")
+    write_github_env("HAS_BLOCKING", "true" if has_blocking else "false")
 
-    logger.info(
-        "Review written to %s (blocking=%s)", OUTPUT_FILE, has_blocking
-    )
+    logger.info("Review written to %s (blocking=%s)", OUTPUT_FILE, has_blocking)
 
 
 if __name__ == "__main__":

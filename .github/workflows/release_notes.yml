@@ -36,7 +36,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Gemini SDK
-        run: pip install --quiet google-generativeai
+        run: pip install --quiet google-genai
 
       - name: Generate release notes via Gemini
         env:
@@ -45,8 +45,8 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           python - <<'PYEOF'
-          import os, sys, time
-          import google.generativeai as genai
+          import os, sys, time, re
+          from google import genai
 
           api_key = os.environ["GEMINI_API_KEY"]
           pr_title = os.environ.get("PR_TITLE", "")
@@ -95,12 +95,13 @@ jobs:
           ```
           """
 
-          genai.configure(api_key=api_key)
-          model = genai.GenerativeModel("gemini-2.0-flash")
+          client = genai.Client(api_key=api_key)
 
           for attempt in range(1, 4):
               try:
-                  response = model.generate_content(prompt)
+                  response = client.models.generate_content(
+                      model="gemini-2.0-flash", contents=prompt
+                  )
                   notes = response.text.strip()
                   notes = notes.lstrip("```markdown").lstrip("```").rstrip("```").strip()
                   open("/tmp/release_notes.md", "w").write(notes)
@@ -109,7 +110,9 @@ jobs:
               except Exception as e:
                   print(f"Attempt {attempt} failed: {e}", file=sys.stderr)
                   if attempt < 3:
-                      time.sleep(2 ** attempt)
+                      match = re.search(r"retry in ([\d.]+)s", str(e))
+                      wait = float(match.group(1)) + 5 if match else 2 ** attempt
+                      time.sleep(wait)
 
           print("All retries exhausted -- skipping release notes", file=sys.stderr)
           open("/tmp/release_notes.md", "w").write("")

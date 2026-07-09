@@ -39,7 +39,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Gemini SDK
-        run: pip install --quiet google-generativeai
+        run: pip install --quiet google-genai
 
       - name: Run Gemini review
         env:
