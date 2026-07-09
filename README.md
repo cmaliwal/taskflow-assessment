@@ -26,6 +26,32 @@ python manage.py runserver
 - Health check: `http://localhost:8000/health/`
 - Admin: `http://localhost:8000/admin/`
 
+Seed realistic data:
+
+```bash
+python manage.py seed_data --projects 5 --tasks-per-project 8
+```
+
+## API Reference
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET/POST | `/api/projects/` | List (paginated, with `task_count`) / create |
+| GET/PATCH/DELETE | `/api/projects/{id}/` | Retrieve (nested tasks) / update / delete |
+| GET | `/api/projects/{id}/summary/` | Task totals and completion rate (single query) |
+| GET/POST | `/api/tasks/` | List / create |
+| GET/PATCH/DELETE | `/api/tasks/{id}/` | Retrieve / update / delete |
+
+Query params: `?priority=3`, `?is_complete=true`, `?project={id}`, `?search=`,
+`?ordering=-created`, `?page=2`.
+
+## Delivery Workflow
+
+`main` started as a minimal base (Cursor rules, CI, scaffold, `BaseModel`).
+Each Section A task was delivered through its own GitHub issue, feature branch,
+and pull request, gated by CI (ruff, mypy, pytest on a PostgreSQL service) and
+squash-merged. No task code was pushed directly to `main`.
+
 ## Development
 
 ```bash
