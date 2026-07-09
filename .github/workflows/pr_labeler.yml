@@ -1,0 +1,90 @@
+name: PR Size Labeler
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute changed lines and apply size label
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { execSync } = require('child_process');
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            // Fetch base so we can diff against it
+            execSync(`git fetch --no-tags origin ${context.payload.pull_request.base.ref}`);
+
+            let changed = 0;
+            try {
+              const output = execSync(
+                `git diff --numstat origin/${context.payload.pull_request.base.ref}...HEAD ` +
+                `-- ":(exclude)*/migrations/*" ":(exclude)*.lock" ":(exclude)*.md"`,
+                { encoding: 'utf8' }
+              );
+              for (const line of output.split('\n')) {
+                const [added, removed] = line.trim().split(/\s+/).map(Number);
+                if (!isNaN(added)) changed += added;
+                if (!isNaN(removed)) changed += removed;
+              }
+            } catch (e) {
+              core.warning('Could not compute diff size: ' + e.message);
+            }
+
+            const sizes = [
+              { label: 'size/XS', max: 10 },
+              { label: 'size/S',  max: 50 },
+              { label: 'size/M',  max: 200 },
+              { label: 'size/L',  max: 500 },
+              { label: 'size/XL', max: Infinity },
+            ];
+
+            const sizeLabel = sizes.find(s => changed <= s.max).label;
+
+            // Remove existing size labels
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner, repo, issue_number: prNumber,
+            });
+            for (const l of labels) {
+              if (l.name.startsWith('size/') && l.name !== sizeLabel) {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: prNumber, name: l.name,
+                }).catch(() => {});
+              }
+            }
+
+            // Ensure the size label exists in the repo
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: sizeLabel });
+            } catch {
+              const colors = {
+                'size/XS': '3cbf00',
+                'size/S':  '5d9801',
+                'size/M':  'e4c612',
+                'size/L':  'ee8811',
+                'size/XL': 'ee3311',
+              };
+              await github.rest.issues.createLabel({
+                owner, repo, name: sizeLabel,
+                color: colors[sizeLabel] || 'cccccc',
+                description: `PR changes ${sizeLabel.split('/')[1]} size`,
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              owner, repo, issue_number: prNumber, labels: [sizeLabel],
+            });
+
+            core.info(`PR #${prNumber} labelled ${sizeLabel} (${changed} lines changed)`);
