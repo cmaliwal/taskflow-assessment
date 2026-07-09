@@ -1,0 +1,70 @@
+---
+globs: *.py
+description: Logging best practices and appropriate log levels
+---
+
+# Logging Best Practices
+
+## Default Log Level: Use `logger.debug()` by Default
+
+Use `logger.debug()` as the default log level, NOT `logger.info()`.
+
+- In production, `info` logs get very noisy and increase observability costs.
+- Only use `logger.info()` for events genuinely worth monitoring in production
+  (auth success, payment processed, key state transitions).
+
+```python
+# CORRECT: debug for routine operations
+logger.debug("Fetching tasks for project %s", project_id)
+
+# CORRECT: info sparingly, for important production events
+logger.info("Project created", extra={"project_id": project.id})
+
+# WRONG: info for routine operations - clutters production logs
+logger.info(f"Fetching tasks for project {project_id}")
+```
+
+## Never Use `print()` in Application Code
+
+Use `logger.debug()` instead. In management commands, use `self.stdout.write()`
+and `self.style.SUCCESS/WARNING/ERROR` for user-facing output.
+
+## Use `logger.exception()` in `except` Blocks - Always
+
+When logging inside an `except` block, always use `logger.exception()`, never
+`logger.error()`. `logger.exception()` automatically captures the full stack
+trace. `logger.error()` loses the traceback.
+
+```python
+# WRONG: loses the stack trace
+except IntegrityError as exc:
+    logger.error(f"Failed to create task: {exc}")
+
+# CORRECT: full stack trace captured
+except IntegrityError:
+    logger.exception("Failed to create task")
+    raise
+```
+
+This applies to every `except` block that logs. If you see `logger.error()`
+inside an `except` block, change it to `logger.exception()`.
+
+## Log Level Guidelines
+
+| Level | Use For |
+|-------|---------|
+| `debug` | Development info, verbose details, routine operations |
+| `info` | Important production events only (auth, key state changes) |
+| `warning` | Unexpected but recoverable situations |
+| `error` | Errors that need attention |
+| `exception` | Errors with stack traces (only inside `except` blocks) |
+
+## Security Logging
+
+- Log security-relevant events (failed auth, access denied, validation failures).
+- Never log sensitive data (passwords, tokens, PII, full request bodies).
+
+## Use Lazy `%`-Style Formatting for Log Args
+
+Prefer `logger.debug("value=%s", value)` over f-strings in hot paths, so the
+string is only formatted when the log level is active.

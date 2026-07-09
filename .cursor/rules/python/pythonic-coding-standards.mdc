@@ -1,0 +1,87 @@
+---
+description: Pythonic coding standards - attribute access, defensive patterns, anti-patterns
+globs: **/*.py
+alwaysApply: true
+---
+
+# Pythonic Coding Standards
+
+> Write idiomatic Python. Trust your types, avoid unnecessary defensiveness,
+> favor simplicity over safety theater.
+
+## Work With Frameworks, Not Against Them
+
+If you are fighting the framework, you are using it wrong. Before reaching for a
+workaround, ask: how does Django or DRF expect me to do this?
+
+| Framework | Working WITH it | Working AGAINST it |
+|-----------|-----------------|--------------------|
+| Django | QuerySet methods, `select_related`, annotations | Fetching all rows and filtering in Python |
+| DRF | Serializers, ViewSets, routers, `validate_*` | Manual request parsing, hand-rolled dispatch |
+
+## Attribute Access
+
+Use dot notation by default. Only use `getattr` for dynamic attribute names or
+genuinely unknown object types.
+
+```python
+# CORRECT
+project.name
+task.project.name
+
+# WRONG: unnecessary getattr on a typed object
+getattr(task, "project", None)
+```
+
+## Avoid Overly Defensive Patterns
+
+Trust your types. Let exceptions bubble up rather than swallowing potential bugs.
+
+```python
+# CORRECT: trust the type, let AttributeError surface if the model is wrong
+def project_label(project: Project) -> str:
+    return project.name.upper()
+
+# WRONG: silently swallowing potential bugs
+def project_label(project: Project) -> str:
+    name = getattr(project, "name", "")
+    return name.upper() if name else ""
+```
+
+## Dictionary Access
+
+- Direct access `data["key"]` for required keys (hides fewer bugs).
+- `.get("key", default)` only for truly optional keys.
+
+## Mutable Default Arguments
+
+Never use mutable objects (`dict`, `list`, `set`) as default argument values.
+Use `None` and initialize inside the function.
+
+```python
+# DANGEROUS: shared across all calls
+def add(item, items=[]): ...
+
+# CORRECT
+def add(item, items=None):
+    items = items or []
+```
+
+## Exception Handling
+
+- Catch specific exceptions (`IntegrityError`, `Project.DoesNotExist`), never bare `except:`.
+- Keep `try` blocks minimal - wrap only the code that can raise.
+- Use `else` for the success path, `finally` for cleanup.
+- Re-raise when not fully handled (`raise` inside `except`) to avoid silent failures.
+- Do not use exceptions for normal control flow (prefer `dict.get()` over catching `KeyError`).
+
+## Anti-Patterns to Avoid
+
+| Anti-Pattern | Correct Approach |
+|--------------|------------------|
+| `def f(items=[])` | `items=None` then `items = items or []` |
+| `getattr(obj, "attr", None)` on typed objects | `obj.attr` |
+| `data.get("key")` for required keys | `data["key"]` |
+| Silent `try/except: pass` | Catch specific exceptions, log, re-raise |
+| Python loops over DB results | ORM filtering/aggregation |
+| `print()` in application code | `logger.debug()` |

@@ -1,0 +1,56 @@
+---
+description: Project context, stack, structure, and core engineering principles. Always applied.
+alwaysApply: true
+---
+
+# Taskflow - Project Context
+
+> A Django 5 + DRF + PostgreSQL REST API for managing projects and their tasks.
+> Built AI-assisted with Cursor, following senior engineering conventions adapted
+> from a production platform codebase.
+
+## Stack
+
+- Python 3.12+
+- Django 5.x
+- Django REST Framework 3.15+
+- PostgreSQL 16
+- pytest + pytest-django for tests
+- ruff (lint + format) and mypy (type checking) enforced in CI
+
+## Project Structure
+
+```
+taskflow/            # Django project config (settings, urls, wsgi/asgi)
+common/              # Shared building blocks
+  models/base.py     # BaseModel: UUID pk + created/modified timestamps + indexes
+projects/            # The domain app
+  models/            # One model per file, re-exported from models/__init__.py
+  serializers.py     # DRF serializers with explicit validation
+  filters.py         # django-filter FilterSets (correct field types)
+  views.py           # DRF ViewSets, custom actions, optimized querysets
+  urls.py            # DRF router registration
+  management/commands # seed_data and other commands
+  tests/             # pytest test suite (one file per concern)
+```
+
+## Core Principles
+
+1. **Be Pythonic. Be Djangonic.** Use the ORM's abstractions. Let the database do the work. Trust the framework.
+2. **The Model IS the service layer.** Do not create Service classes for CRUD. Use Model methods, custom QuerySets, and Managers.
+3. **Push logic to the database.** Filter, aggregate, and annotate in SQL, never in Python loops.
+4. **Validate at the edge.** Reject bad input at the serializer level with a clear 4xx, never let it reach the database as a 500.
+5. **Everything is typed and linted.** Code must pass ruff and mypy before it merges.
+6. **Tests are not optional.** Every endpoint and every bug fix ships with a test.
+
+## Related Rules
+
+- `python/pythonic-coding-standards.mdc`
+- `django/django-models-best-practices.mdc`
+- `django/django-admin-best-practices.mdc`
+- `drf/drf-api-design.mdc`
+- `operations/logging-best-practices.mdc`
+- `database/database-optimization.mdc`
+- `testing/testing-best-practices.mdc`
+- `security/security-best-practices.mdc`
+- `workflow/git-workflow.mdc`

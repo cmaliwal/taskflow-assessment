@@ -1,0 +1,65 @@
+---
+description: DRF serializer, viewset, filter, and REST API design principles
+globs: projects/serializers.py, projects/views.py, projects/filters.py, projects/urls.py
+alwaysApply: false
+---
+
+# DRF and REST API Design
+
+> Resources are nouns. URLs identify resources, HTTP methods define actions.
+> Flat is better than nested. Pagination is not optional.
+
+## URL Structure
+
+| Pattern | Purpose |
+|---------|---------|
+| `GET /api/projects/` | List (paginated) |
+| `POST /api/projects/` | Create |
+| `GET /api/projects/{id}/` | Retrieve |
+| `PATCH /api/projects/{id}/` | Partial update |
+| `DELETE /api/projects/{id}/` | Delete |
+| `GET /api/projects/{id}/summary/` | Resource action |
+
+Use plural, lowercase, snake_case resource names. Nest at most one level.
+
+## Serializer FK Validation
+
+```python
+# CORRECT: queryset enables DRF's built-in FK existence check
+project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all())
+
+# WRONG: empty queryset bypasses validation; the DB throws IntegrityError on save
+project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.none())
+```
+
+Add explicit `validate_<field>()` methods for business rules so invalid input is
+rejected with a clean 400, never a 500 from the database.
+
+## Filter Field Types
+
+```python
+# IntegerChoices field: ChoiceFilter (exact integer match + choice validation)
+priority = django_filters.ChoiceFilter(choices=Task.Priority.choices)
+
+# WRONG: icontains is a string op; on an IntegerField PostgreSQL raises DataError
+priority = django_filters.CharFilter(field_name="priority", lookup_expr="icontains")
+```
+
+## ViewSet Serializer Strategy
+
+- List endpoint: a flat serializer with annotated counts (fast).
+- Retrieve endpoint: a richer serializer with nested, prefetched related objects.
+- Override `get_serializer_class()` to switch on `self.action`.
+- Override `get_queryset()` to `annotate` for list and `prefetch_related` for retrieve.
+
+## Custom Actions
+
+Use `@action(detail=True, ...)` for resource actions. Compute aggregates in a
+single annotated query, not multiple `.count()` calls.
+
+## Response and Error Conventions
+
+- Paginate all list endpoints (`PageNumberPagination`, page size 20).
+- Use correct status codes: 400 validation, 403 forbidden, 404 not found, 422 business rule.
+- Error messages must be consumer-friendly - never leak model names, ORM methods,
+  file paths, SQL, or stack traces. Log details server-side, return a generic message.

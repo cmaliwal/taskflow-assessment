@@ -1,0 +1,50 @@
+---
+description: Testing conventions with pytest and pytest-django
+globs: projects/tests/**/*.py, **/test_*.py, conftest.py
+alwaysApply: false
+---
+
+# Testing Best Practices
+
+## Framework
+
+- pytest + pytest-django. No `unittest.TestCase`, no `setUp`/`tearDown`.
+- Use `@pytest.fixture` for shared setup; encapsulate repetition in fixtures.
+- Mark DB-touching tests/fixtures with the `db` fixture.
+- For async tests use `@pytest.mark.asyncio`.
+
+## Test Naming
+
+`test_<subject>_<condition>_<expected_outcome>`
+
+Examples:
+- `test_task_serializer_nonexistent_project_returns_validation_error`
+- `test_task_filter_priority_returns_only_matching_tasks`
+- `test_project_summary_no_tasks_returns_zero_percentage`
+
+## Coverage Expectations
+
+Every endpoint has tests for:
+1. Happy path (valid input, correct status and response shape).
+2. Not found (404 for detail endpoints).
+3. Validation errors (400 with the right error key).
+4. Filter correctness (results only contain matching rows).
+
+Every bug fix ships with a regression test that would have caught the bug.
+
+## Fixtures Over Repetition
+
+```python
+@pytest.fixture
+def project(db) -> Project:
+    return Project.objects.create(name="Alpha", status=Project.Status.ACTIVE)
+
+def test_create_task(project, api_client):
+    ...
+```
+
+## Test Behavior, Not Implementation
+
+Assert on HTTP status codes and response data. Do not assert that Django
+internals behave (that `auto_now_add` sets a time). Do assert the field has the
+right value for a given input.

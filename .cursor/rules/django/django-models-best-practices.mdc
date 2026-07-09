@@ -1,0 +1,93 @@
+---
+description: Django models and ORM best practices - structure, migrations, QuerySets, indexes
+globs: projects/models/*.py, common/models/*.py, projects/models.py
+alwaysApply: false
+---
+
+# Django Models Best Practices
+
+> Be Pythonic. Be Djangonic. Let the database do the work. Trust the framework.
+
+## File Organization: One Model Per File
+
+Each model lives in its own file inside a `models/` directory. The directory's
+`__init__.py` re-exports every model so external code imports from
+`app.models` as usual.
+
+```
+projects/models/
+  __init__.py      # Re-exports all models
+  project.py       # Project + its choices/QuerySet if any
+  task.py          # Task + its choices
+```
+
+```python
+# projects/models/__init__.py
+from projects.models.project import Project
+from projects.models.task import Task
+
+__all__ = ["Project", "Task"]
+```
+
+Keep a model's tightly-coupled companions in the same file: its custom QuerySet,
+its `TextChoices`/`IntegerChoices` (when used only by that model), and private helpers.
+
+## Inherit From BaseModel
+
+Every domain model extends `common.models.BaseModel`, which provides a UUID
+primary key, `created`/`modified` timestamps, and shared indexes. Always inherit
+`BaseModel.Meta` so those indexes and ordering are preserved.
+
+```python
+# CORRECT: extend the parent Meta, extend (do not replace) parent indexes
+class Task(BaseModel):
+    class Meta(BaseModel.Meta):
+        indexes = BaseModel.Meta.indexes + [
+            models.Index(fields=["project", "is_complete"]),
+        ]
+
+# WRONG: plain Meta silently drops BaseModel.Meta indexes and ordering
+class Task(BaseModel):
+    class Meta:
+        ...
+```
+
+## The Model IS the Service Layer
+
+Do NOT create Service classes for CRUD on domain objects. Use Model methods,
+properties, custom QuerySets, and Managers. A Service class is justified only
+for complex orchestration across unrelated models with external side effects.
+
+## Choose the Right Field Type
+
+- Use `IntegerChoices` for ordered enumerations (priority): numeric ordering is
+  correct, and it avoids the `icontains`-on-IntegerField class of bugs.
+- Use `TextChoices` for unordered string enumerations (status).
+- Use `ForeignKey`/`ManyToManyField` for relationships, never a `JSONField` of IDs.
+
+## Query Optimization
+
+- `select_related()` for forward ForeignKey / OneToOne (one related object, JOIN).
+- `prefetch_related()` for reverse FK / ManyToMany (multiple related objects).
+- `annotate()` with `Count`, `Sum`, `Max` for aggregates - never count in Python.
+- `bulk_create()` / `bulk_update()` for batch writes - never `.save()` in a loop.
+- `.only()` / `.values()` / `.values_list()` to project only the columns you need.
+- Keep QuerySets lazy; avoid premature `list()`.
+
+## Indexes
+
+- Single-field index: `db_index=True` on the field.
+- Composite index: `models.Index(fields=[...])` in `Meta.indexes`.
+- ForeignKey fields are indexed by default - do not add explicit indexes for them.
+
+## Migrations
+
+- Never hand-write migrations. Use `python manage.py makemigrations`.
+- Verify the generated migration (field types, FK `on_delete`, indexes) before running.
+- Keep data backfills out of `RunPython` for large tables; use a management command.
+
+## Deduplication
+
+Use `UniqueConstraint` + catch `IntegrityError` at the handler level rather than
+pre-checking in Python (avoids race conditions). Prefer `update_or_create()`
+over manual get/create/save.

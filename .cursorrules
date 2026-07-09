@@ -1,0 +1,47 @@
+# Taskflow - Cursor Project Rules
+# Stack: Python 3.12 - Django 5.x - DRF - PostgreSQL - pytest - ruff - mypy
+#
+# Detailed rules live in .cursor/rules/. This file is the always-on summary.
+# Read .cursor/rules/00-project-context.mdc for the full picture.
+
+## Golden Rules
+- Be Pythonic, be Djangonic. Use the ORM; let the database do the work.
+- The Model IS the service layer. No Service classes for CRUD.
+- Validate at the serializer edge. Bad input returns a clean 400, never a DB 500.
+- Everything is typed (mypy) and linted (ruff) before it merges.
+- Every endpoint and every bug fix ships with a test.
+
+## Logging
+- Default to logger.debug(). Reserve logger.info() for key production events.
+- Always logger.exception() inside except blocks (never logger.error()).
+- Never use print() in application code.
+
+## Django ORM
+- Domain models extend common.models.BaseModel (UUID pk + created/modified + indexes).
+- Inherit BaseModel.Meta; extend (never replace) BaseModel.Meta.indexes.
+- One model per file under models/, re-exported from models/__init__.py.
+- select_related for forward FK, prefetch_related for reverse FK / M2M.
+- annotate() for aggregates; bulk_create() for batch writes; never .save() in a loop.
+- IntegerChoices for ordered enums (priority); TextChoices for status.
+
+## DRF
+- PrimaryKeyRelatedField(queryset=Model.objects.all()) - never .none().
+- ChoiceFilter for IntegerChoices/TextChoices fields - never CharFilter(icontains) on numbers.
+- Separate list vs detail serializers; switch via get_serializer_class().
+- Paginate every list endpoint (page size 20).
+
+## Security
+- Read all secrets from environment variables. Never hardcode or commit them.
+- Error messages must be consumer-friendly. Never leak model names, ORM, SQL, or paths.
+
+## Git
+- Feature branch per issue; PR into main; never commit directly to main.
+- Conventional Commits. No em dash in commit/branch/PR text.
+
+## Never Generate
+- print() in application code.
+- .save() inside loops.
+- CharFilter(lookup_expr="icontains") on a numeric field.
+- PrimaryKeyRelatedField(queryset=Model.objects.none()).
+- bare except: or logger.error() inside an except block.
+- comments that merely narrate what the code does.

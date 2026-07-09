@@ -1,0 +1,49 @@
+---
+globs: projects/admin.py, common/admin.py
+description: Django admin interface best practices
+---
+
+# Django Admin Best Practices
+
+## `list_filter` Only for Bounded Option Sets
+
+Use `list_filter` only for fields with a fixed, bounded set of options (choice
+fields, booleans, status). Never for timestamps or unique identifiers - they
+create a new filter option per row and cause performance issues.
+
+```python
+# CORRECT
+list_filter = ("status", "is_complete", "priority")
+
+# WRONG: created/modified explode into one option per timestamp
+list_filter = ("status", "created", "modified", "id")
+
+# Use date_hierarchy for date navigation instead
+date_hierarchy = "created"
+```
+
+## Optimize Admin QuerySets
+
+Override `get_queryset()` to add `select_related` for ForeignKeys shown in
+`list_display`, and `annotate()` for counts. Never trigger N+1 in the changelist.
+
+```python
+def get_queryset(self, request):
+    return super().get_queryset(request).annotate(_task_count=Count("tasks"))
+```
+
+## Use `raw_id_fields` for ForeignKeys
+
+Prevents loading all related objects into a dropdown. Especially important for
+models with many rows.
+
+```python
+raw_id_fields = ("project",)
+list_select_related = ("project",)
+```
+
+## Inlines
+
+Use `admin.TabularInline` with `extra = 0` and an optimized `get_queryset` for
+related objects. Only prefetch a ManyToMany if you actually iterate it; for a
+count use `.count()`.

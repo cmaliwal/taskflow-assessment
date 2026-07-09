@@ -1,0 +1,76 @@
+---
+description: Database optimization patterns for performance and efficiency
+globs: projects/**/*.py
+alwaysApply: false
+---
+
+# Database Optimization
+
+## Prefer Database Operations Over In-Memory Processing
+
+```python
+# WRONG: in-memory filtering
+tasks = list(Task.objects.all())
+done = [t for t in tasks if t.is_complete]
+
+# CORRECT: database filtering
+done = Task.objects.filter(is_complete=True)
+```
+
+## Avoid N+1 With select_related / prefetch_related
+
+```python
+# WRONG: one query per task to fetch the project
+for task in Task.objects.all():
+    print(task.project.name)
+
+# CORRECT: single JOIN
+for task in Task.objects.select_related("project"):
+    print(task.project.name)
+```
+
+`select_related` for forward FK (JOIN, one related object). `prefetch_related`
+for reverse FK / M2M (second query, Python-side matching).
+
+## Aggregate in the Database
+
+```python
+# CORRECT: one annotated query
+Project.objects.annotate(
+    task_count=Count("tasks"),
+    completed_tasks=Count("tasks", filter=Q(tasks__is_complete=True)),
+    latest_due=Max("tasks__due_date"),
+)
+```
+
+## Bulk Operations
+
+```python
+# WRONG: N queries
+for row in rows:
+    Task.objects.create(**row)
+
+# CORRECT: one query
+Task.objects.bulk_create([Task(**row) for row in rows])
+```
+
+## Projection Strategy
+
+| Need | Use | Returns |
+|------|-----|---------|
+| Model instances with behavior | `select_related()` | full model objects |
+| Fewer columns on instances | `select_related()` + `only()` | deferred-field objects |
+| A few scalars across tables | `.values("a", "rel__b")` | list of dicts |
+| One or two columns | `.values_list("a", flat=True)` | list of raw values |
+
+## Pagination and Bounds
+
+- Always paginate list endpoints; never return an unbounded result set.
+- Use `settings.DEFAULT_CHUNK_SIZE` and the Django `Paginator` for batch commands.
+- Always `.order_by()` a stable key when paginating for consistent results.
+- Cap `filter(id__in=large_list)` sizes; slice the list before passing it to the ORM.
+
+## Batch Commands
+
+Wrap batch writes in `transaction.atomic()` so a failure rolls back cleanly and
+never leaves partial data.

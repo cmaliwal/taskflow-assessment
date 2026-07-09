@@ -1,0 +1,58 @@
+---
+description: Git workflow and version control best practices
+alwaysApply: false
+---
+
+# Git Workflow
+
+> Small, focused commits. Clear messages. One issue per branch, one branch per PR.
+
+## Branch-Based Workflow
+
+`origin` is the canonical repo. Work on short-lived feature branches, never
+directly on `main`. Open a pull request from the feature branch into `main`.
+
+## Branch Naming
+
+Use kebab-case. Include the issue number when applicable.
+
+| Type | Format | Example |
+|------|--------|---------|
+| Feature | `feature/description` | `feature/12-task-crud-api` |
+| Bug fix | `fix/description` | `fix/13-priority-filter-datatype` |
+| Chore | `chore/description` | `chore/ci-lint-workflow` |
+| Docs | `docs/description` | `docs/orm-optimization-notes` |
+
+## Commit Messages - Conventional Commits
+
+```
+<type>(<scope>): <description>
+```
+
+Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`.
+
+```bash
+# Good
+git commit -m "feat(api): add project summary action with single annotated query"
+git commit -m "fix(filters): use ChoiceFilter for priority to avoid DataError"
+
+# Bad
+git commit -m "wip"
+git commit -m "updates"
+```
+
+Do not use an em dash in commit messages, branch names, PR titles, or PR
+descriptions. Use a regular hyphen or rephrase.
+
+## Never Rebase Shared Branches
+
+Always merge. Do not `git rebase` or `git pull --rebase` on branches others may
+share. If a push is rejected because the remote is ahead, `git pull --no-rebase`
+then push.
+
+## PRs
+
+- Link the issue the PR closes (`Closes #N`).
+- Keep the PR scoped to a single logical change.
+- CI (lint + type-check + tests) must be green before merge.
+- Prefer squash-and-merge into `main` to keep history clean.

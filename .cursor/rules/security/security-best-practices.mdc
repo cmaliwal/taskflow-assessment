@@ -1,0 +1,60 @@
+---
+description: Security best practices following OWASP guidelines
+globs: projects/**/*.py, common/**/*.py, taskflow/**/*.py
+alwaysApply: false
+---
+
+# Security Best Practices
+
+> Security is not an afterthought. Align your code to be secure-first.
+
+## Input Validation
+
+Do not trust user input. Validate at the serializer level with explicit field
+constraints and `validate_*` methods before touching the database.
+
+## Credential Storage
+
+Never commit secrets. Read all credentials and config from environment variables.
+
+| Environment | Storage |
+|-------------|---------|
+| Local | `.env` (git-ignored) |
+| CI | GitHub Actions secrets |
+| Production | Platform environment variables |
+
+```python
+SECRET_KEY = os.environ["SECRET_KEY"]           # required in prod
+DEBUG = os.environ.get("DEBUG", "False") == "True"
+```
+
+## Error Message Information Disclosure
+
+Error responses must never expose internal implementation details.
+
+```python
+# CORRECT: generic, consumer-friendly
+return Response({"detail": "Project not found."}, status=404)
+
+# WRONG: leaks model names, ORM methods, SQL, or stack traces
+return Response({"detail": f"Project.objects.get raised {exc}"}, status=500)
+```
+
+Log the details server-side with `logger.exception(...)`; return a generic message.
+
+## Access Control
+
+Scope queries to the requesting user's data where applicable. Never expose an
+endpoint that returns any record by id without an ownership/permission check.
+
+## Security Logging
+
+Log failed auth, access-denied, and validation failures. Never log passwords,
+tokens, or PII.
+
+## Checklist for New Endpoints
+
+- [ ] Input validated with serializer constraints
+- [ ] No credentials in code, logs, or error messages
+- [ ] Error messages are consumer-friendly (no model names, ORM, paths, SQL)
+- [ ] Security-relevant events logged (without secrets)
