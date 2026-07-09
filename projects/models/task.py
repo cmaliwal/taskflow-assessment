@@ -24,7 +24,7 @@ class TaskManager(models.Manager["Task"]):
 class Task(BaseModel):
     """A unit of work belonging to a project."""
 
-    objects: TaskManager = TaskManager()  # type: ignore[assignment]
+    objects: TaskManager = TaskManager()
 
     class Priority(models.IntegerChoices):
         LOW = 1, "Low"

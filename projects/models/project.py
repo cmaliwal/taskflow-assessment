@@ -37,7 +37,7 @@ class ProjectManager(models.Manager["Project"]):
 class Project(BaseModel):
     """A project that groups related tasks."""
 
-    objects: ProjectManager = ProjectManager()  # type: ignore[assignment]
+    objects: ProjectManager = ProjectManager()
 
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
