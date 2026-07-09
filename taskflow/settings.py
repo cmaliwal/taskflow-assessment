@@ -87,6 +87,7 @@ REST_FRAMEWORK = {
         "rest_framework.filters.OrderingFilter",
         "rest_framework.filters.SearchFilter",
     ],
+    "EXCEPTION_HANDLER": "common.exceptions.taskflow_exception_handler",
 }
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")

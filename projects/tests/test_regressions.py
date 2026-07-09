@@ -42,4 +42,4 @@ def test_create_task_with_unknown_project_returns_400(api_client: APIClient, db)
     response = api_client.post("/api/tasks/", payload, format="json")
 
     assert response.status_code == 400
-    assert "project" in response.json()
+    assert "project" in response.json()["errors"]
