@@ -52,6 +52,11 @@ class ProjectWriteSerializer(serializers.ModelSerializer):
         stripped = value.strip()
         if not stripped:
             raise serializers.ValidationError("Name must not be blank.")
+        qs = Project.objects.filter(name__iexact=stripped)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A project with this name already exists.")
         return stripped
 
 
