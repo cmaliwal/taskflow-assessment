@@ -1,0 +1,43 @@
+# Cursor codebase index exclusions
+#
+# Cursor indexes the workspace to power @Codebase queries and completions.
+# Patterns here mirror .gitignore so that build artifacts, caches, and
+# machine-generated files are excluded from the index, keeping it lean and
+# focused on project source files.
+
+# Virtual environment
+venv/
+.venv/
+
+# Compiled Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Test coverage output
+.coverage
+htmlcov/
+
+# Django-generated migrations (machine-generated; schema is read via models)
+*/migrations/*.py
+!*/migrations/__init__.py
+
+# Static and media output
+staticfiles/
+mediafiles/
+media/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Editor and OS artifacts
+.DS_Store
+*.log
