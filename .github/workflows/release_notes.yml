@@ -43,80 +43,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          python - <<'PYEOF'
-          import os, sys, time, re
-          from google import genai
-
-          api_key = os.environ["GEMINI_API_KEY"]
-          pr_title = os.environ.get("PR_TITLE", "")
-          pr_body = os.environ.get("PR_BODY", "")
-
-          try:
-              diff = open("/tmp/pr.diff").read()
-          except FileNotFoundError:
-              diff = ""
-
-          if not diff.strip():
-              print("Empty diff -- skipping release notes generation")
-              open("/tmp/release_notes.md", "w").write("")
-              sys.exit(0)
-
-          prompt = f"""
-          You are generating release notes for a pull request into main.
-
-          Write a concise, user-facing release note in markdown.
-
-          Format:
-          ## What changed
-
-          - Clear, non-technical bullet points describing what this PR does
-          - Focus on user-visible behavior, not implementation details
-
-          ## Technical summary
-
-          - 2-3 bullets on the implementation approach
-
-          ## Migration / deployment notes
-
-          - Any database migrations, env var changes, or deployment steps required
-          - If none: "No action required."
-
-          ---
-
-          PR title: {pr_title}
-
-          Existing description:
-          {pr_body or '(none)'}
-
-          Diff:
-          ```diff
-          {diff[:8000]}
-          ```
-          """
-
-          client = genai.Client(api_key=api_key)
-
-          for attempt in range(1, 4):
-              try:
-                  response = client.models.generate_content(
-                      model="gemini-2.5-flash", contents=prompt
-                  )
-                  notes = response.text.strip()
-                  notes = notes.lstrip("```markdown").lstrip("```").rstrip("```").strip()
-                  open("/tmp/release_notes.md", "w").write(notes)
-                  print(f"Release notes written ({len(notes)} chars)")
-                  sys.exit(0)
-              except Exception as e:
-                  print(f"Attempt {attempt} failed: {e}", file=sys.stderr)
-                  if attempt < 3:
-                      match = re.search(r"retry in ([\d.]+)s", str(e))
-                      wait = float(match.group(1)) + 5 if match else 2 ** attempt
-                      time.sleep(wait)
-
-          print("All retries exhausted -- skipping release notes", file=sys.stderr)
-          open("/tmp/release_notes.md", "w").write("")
-          PYEOF
+        run: python .github/scripts/gemini_release_notes.py
 
       - name: Update PR description with release notes
         uses: actions/github-script@v7
@@ -134,7 +61,6 @@ jobs:
             const { owner, repo } = context.repo;
             const existingBody = context.payload.pull_request.body || '';
 
-            // Prepend the generated notes above any existing content
             const divider = '\n\n---\n\n';
             const updatedBody = notes + divider + existingBody;
 

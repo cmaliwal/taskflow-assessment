@@ -70,7 +70,7 @@ def call_gemini(api_key: str, message: str) -> str:
                 model=MODEL,
                 contents=message,
             )
-            return response.text  # type: ignore[return-value]
+            return response.text or ""
         except Exception as exc:
             logger.exception("Gemini API call failed on attempt %d", attempt)
             if attempt < MAX_RETRIES:
