@@ -29,7 +29,7 @@ MAX_REVIEW_LINES = 800
 PROMPT_FILE = ".github/prompts/gemini-review.md"
 DIFF_FILE = "/tmp/pr.diff"
 OUTPUT_FILE = "/tmp/gemini_review.md"
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-2.5-flash"
 MAX_RETRIES = 3
 DEFAULT_RETRY_WAIT = 60
 
