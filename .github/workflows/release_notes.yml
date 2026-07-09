@@ -1,0 +1,142 @@
+name: Generate Release Notes
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - main
+
+concurrency:
+  group: release-notes-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-notes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute diff
+        run: |
+          git fetch --no-tags origin ${{ github.base_ref }}
+          git diff origin/${{ github.base_ref }}...HEAD \
+            -- \
+            ':(exclude)*/migrations/*' \
+            ':(exclude)*.lock' \
+            > /tmp/pr.diff
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Gemini SDK
+        run: pip install --quiet google-generativeai
+
+      - name: Generate release notes via Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python - <<'PYEOF'
+          import os, sys, time
+          import google.generativeai as genai
+
+          api_key = os.environ["GEMINI_API_KEY"]
+          pr_title = os.environ.get("PR_TITLE", "")
+          pr_body = os.environ.get("PR_BODY", "")
+
+          try:
+              diff = open("/tmp/pr.diff").read()
+          except FileNotFoundError:
+              diff = ""
+
+          if not diff.strip():
+              print("Empty diff -- skipping release notes generation")
+              open("/tmp/release_notes.md", "w").write("")
+              sys.exit(0)
+
+          prompt = f"""
+          You are generating release notes for a pull request into main.
+
+          Write a concise, user-facing release note in markdown.
+
+          Format:
+          ## What changed
+
+          - Clear, non-technical bullet points describing what this PR does
+          - Focus on user-visible behavior, not implementation details
+
+          ## Technical summary
+
+          - 2-3 bullets on the implementation approach
+
+          ## Migration / deployment notes
+
+          - Any database migrations, env var changes, or deployment steps required
+          - If none: "No action required."
+
+          ---
+
+          PR title: {pr_title}
+
+          Existing description:
+          {pr_body or '(none)'}
+
+          Diff:
+          ```diff
+          {diff[:8000]}
+          ```
+          """
+
+          genai.configure(api_key=api_key)
+          model = genai.GenerativeModel("gemini-2.0-flash")
+
+          for attempt in range(1, 4):
+              try:
+                  response = model.generate_content(prompt)
+                  notes = response.text.strip()
+                  notes = notes.lstrip("```markdown").lstrip("```").rstrip("```").strip()
+                  open("/tmp/release_notes.md", "w").write(notes)
+                  print(f"Release notes written ({len(notes)} chars)")
+                  sys.exit(0)
+              except Exception as e:
+                  print(f"Attempt {attempt} failed: {e}", file=sys.stderr)
+                  if attempt < 3:
+                      time.sleep(2 ** attempt)
+
+          print("All retries exhausted -- skipping release notes", file=sys.stderr)
+          open("/tmp/release_notes.md", "w").write("")
+          PYEOF
+
+      - name: Update PR description with release notes
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const notes = fs.readFileSync('/tmp/release_notes.md', 'utf8').trim();
+            if (!notes) {
+              core.info('No release notes generated -- skipping PR update.');
+              return;
+            }
+
+            const prNumber = context.payload.pull_request.number;
+            const { owner, repo } = context.repo;
+            const existingBody = context.payload.pull_request.body || '';
+
+            // Prepend the generated notes above any existing content
+            const divider = '\n\n---\n\n';
+            const updatedBody = notes + divider + existingBody;
+
+            await github.rest.pulls.update({
+              owner, repo, pull_number: prNumber, body: updatedBody,
+            });
+
+            core.info(`Updated PR #${prNumber} with Gemini-generated release notes.`);

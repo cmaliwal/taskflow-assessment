@@ -1,0 +1,149 @@
+name: Gemini Code Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, synchronize]
+
+concurrency:
+  group: gemini-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute diff (excluding generated files)
+        run: |
+          git fetch --no-tags origin ${{ github.base_ref }}
+          git diff origin/${{ github.base_ref }}...HEAD \
+            -- \
+            ':(exclude)*/migrations/*' \
+            ':(exclude)*.lock' \
+            ':(exclude)*.md' \
+            > /tmp/pr.diff
+
+          ADDED=$(awk '/^\+[^+]/{c++} END{print c+0}' /tmp/pr.diff)
+          echo "Added lines (excluding generated): $ADDED"
+          echo "ADDED_LINES=$ADDED" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Gemini SDK
+        run: pip install --quiet google-generativeai
+
+      - name: Run Gemini review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          ADDED_LINES: ${{ env.ADDED_LINES }}
+        run: python .github/scripts/gemini_review.py
+
+      - name: Post review comment and set PR review status
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          HAS_BLOCKING: ${{ env.HAS_BLOCKING }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const prNumber = context.payload.pull_request.number;
+            const { owner, repo } = context.repo;
+
+            let reviewBody = '';
+            try {
+              reviewBody = fs.readFileSync('/tmp/gemini_review.md', 'utf8').trim();
+            } catch (e) {
+              core.warning('No review output file found: ' + e.message);
+              reviewBody = 'Gemini review did not produce output. Check the workflow run logs.';
+            }
+
+            const hasBlocking = process.env.HAS_BLOCKING === 'true';
+            const marker = '<!-- gemini-review-round:';
+
+            // Collapse previous rounds
+            let roundNumber = 1;
+            const previousRounds = [];
+            for await (const { data: comments } of github.paginate.iterator(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number: prNumber, per_page: 100 }
+            )) {
+              for (const c of comments) {
+                if (c.body?.includes(marker) && c.user?.login === 'github-actions[bot]') {
+                  previousRounds.push(c);
+                  const match = c.body.match(/gemini-review-round:(\d+)/);
+                  if (match) {
+                    const n = parseInt(match[1], 10);
+                    if (n >= roundNumber) roundNumber = n + 1;
+                  }
+                }
+              }
+            }
+
+            for (const prev of previousRounds) {
+              const titleMatch = prev.body.match(/^(## :robot: Gemini Code Review[^\n]*)/);
+              const title = titleMatch ? titleMatch[1] : '## :robot: Gemini Code Review';
+              const prevRoundMatch = prev.body.match(/gemini-review-round:(\d+)/);
+              const prevRound = prevRoundMatch ? prevRoundMatch[1] : '?';
+              const content = prev.body
+                .replace(/^## :robot: Gemini Code Review[^\n]*\n*/, '')
+                .replace(/<!-- gemini-review-round:\d+ -->\n*/, '');
+              const collapsed = `${title}\n\n<!-- gemini-review-round:${prevRound} -->\n<details>\n<summary>Superseded by Round ${roundNumber} -- click to expand</summary>\n\n${content}\n</details>`;
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: prev.id, body: collapsed,
+              });
+            }
+
+            // Post new round
+            const body = `## :robot: Gemini Code Review (Round ${roundNumber})\n\n<!-- gemini-review-round:${roundNumber} -->\n${reviewBody}`;
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: prNumber, body,
+            });
+
+            // Dismiss any previous blocking reviews from this bot
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner, repo, pull_number: prNumber,
+            });
+            for (const review of reviews) {
+              if (
+                review.user?.login === 'github-actions[bot]' &&
+                review.state === 'CHANGES_REQUESTED' &&
+                review.body?.includes('Gemini Code Review')
+              ) {
+                try {
+                  await github.rest.pulls.dismissReview({
+                    owner, repo, pull_number: prNumber,
+                    review_id: review.id,
+                    message: 'Superseded by new Gemini review run.',
+                  });
+                } catch (e) {
+                  core.warning('Could not dismiss previous review: ' + e.message);
+                }
+              }
+            }
+
+            // Set new review verdict
+            if (hasBlocking) {
+              await github.rest.pulls.createReview({
+                owner, repo, pull_number: prNumber,
+                event: 'REQUEST_CHANGES',
+                body: ':robot: **Gemini Code Review found Must fix issues.** See the detailed comment above.\n\nFix the issues and push a new commit to re-trigger the review.',
+              });
+              core.setFailed('Gemini code review found Must fix issues.');
+            } else {
+              await github.rest.pulls.createReview({
+                owner, repo, pull_number: prNumber,
+                event: 'APPROVE',
+                body: ':robot: **Gemini Code Review passed.** No blocking issues found.',
+              });
+            }
