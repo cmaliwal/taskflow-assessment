@@ -1,7 +1,7 @@
 import logging
 
 from django.db.models import Count, Q, QuerySet
-from rest_framework import status, viewsets
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -28,14 +28,11 @@ class ProjectViewSet(viewsets.ModelViewSet):
     ordering = ["-created"]
 
     def get_queryset(self) -> QuerySet[Project]:
-        queryset = Project.objects.all()
         if self.action == "list":
-            # Annotate once instead of counting per row in the serializer.
-            return queryset.annotate(_task_count=Count("tasks"))
+            return Project.objects.with_task_stats()
         if self.action == "retrieve":
-            # Reverse FK: prefetch to avoid N+1 when nesting tasks.
-            return queryset.prefetch_related("tasks")
-        return queryset
+            return Project.objects.with_tasks()
+        return Project.objects.all()
 
     def get_serializer_class(self) -> type[BaseSerializer]:
         if self.action == "list":
@@ -47,26 +44,16 @@ class ProjectViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def summary(self, request: Request, pk: str | None = None) -> Response:
         """Return task totals for a project computed in a single annotated query."""
-        if pk is None:
-            return Response(
-                {"detail": "Project not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        project = self.get_object()
         row = (
-            Project.objects.filter(pk=pk)
+            Project.objects.filter(pk=project.pk)
             .annotate(
                 total_tasks=Count("tasks"),
                 completed_tasks=Count("tasks", filter=Q(tasks__is_complete=True)),
             )
             .values("id", "name", "total_tasks", "completed_tasks")
-            .first()
+            .get()
         )
-        if row is None:
-            return Response(
-                {"detail": "Project not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
         total = row["total_tasks"]
         completed = row["completed_tasks"]
         return Response(
@@ -90,5 +77,4 @@ class TaskViewSet(viewsets.ModelViewSet):
     ordering = ["-created"]
 
     def get_queryset(self) -> QuerySet[Task]:
-        # Forward FK: select_related avoids a query per task for project data.
-        return Task.objects.select_related("project")
+        return Task.objects.with_project()
