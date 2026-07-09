@@ -66,6 +66,10 @@ def _extract_retry_after(error_message: str) -> float:
     match = re.search(r"retry in ([\d.]+)s", error_message)
     if match:
         return float(match.group(1)) + 5.0
+    logger.warning(
+        "Could not parse retry-after from error message; falling back to %ds",
+        int(DEFAULT_RETRY_WAIT),
+    )
     return DEFAULT_RETRY_WAIT
 
 
