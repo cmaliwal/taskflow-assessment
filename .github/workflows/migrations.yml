@@ -1,0 +1,198 @@
+name: Migrations
+
+# Three complementary jobs that together prevent two classes of migration
+# failure in production:
+#
+# 1. check-migrations -- a developer forgot to run makemigrations after
+#    changing a model; caught on every PR before anything merges.
+#
+# 2. migration-up-to-date -- two open PRs independently create the same
+#    migration number (e.g. both add 0009_*.py); the second one to merge
+#    breaks `manage.py migrate` at deploy. This job forces any PR that
+#    touches a migration file to be up-to-date with the base branch before
+#    it can merge, so the collision surfaces locally where makemigrations
+#    can renumber it.
+#
+# 3. restage-migration-prs -- when main moves forward (a migration PR just
+#    merged), all other open PRs that also touch migrations need their
+#    migration-up-to-date check re-run so they are forced to rebase/update
+#    before merging too.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: migrations-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # Job 1: Check that no model changes are missing a migration file.    #
+  # Does not need a real database -- makemigrations --check only reads  #
+  # the models and migration files; it never opens a DB connection.     #
+  # ------------------------------------------------------------------ #
+  check-migrations:
+    runs-on: ubuntu-latest
+
+    env:
+      SECRET_KEY: ci-migration-check-key
+      DEBUG: "False"
+      # Dummy DB values -- makemigrations --check never connects to the DB
+      DB_NAME: dummy
+      DB_USER: dummy
+      DB_PASSWORD: dummy
+      DB_HOST: localhost
+      DB_PORT: "5432"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check for missing migrations
+        run: |
+          python manage.py makemigrations --check --dry-run
+          echo "All migrations are up to date."
+
+  # ------------------------------------------------------------------ #
+  # Job 2: If this PR introduces migration files, it must be up-to-date #
+  # with the base branch. This prevents two PRs from colliding on the   #
+  # same migration number (e.g. both adding 0009_*.py).                 #
+  # ------------------------------------------------------------------ #
+  migration-up-to-date:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Detect migration changes and require up-to-date branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --depth=200
+
+          # Collect every numbered migration file touched in this PR,
+          # excluding any inside a tests/ directory.
+          MIGRATION_FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" \
+            | grep -E '.*/migrations/[0-9][^/]*\.py$' \
+            | grep -vE '/tests/migrations/' || true)
+
+          if [ -z "$MIGRATION_FILES" ]; then
+            echo "No migration files in this PR -- skipping up-to-date check."
+            exit 0
+          fi
+
+          echo "Migration files touched by this PR:"
+          echo "$MIGRATION_FILES"
+          echo ""
+
+          if ! git merge-base --is-ancestor "origin/${BASE_REF}" HEAD; then
+            echo ""
+            echo "This PR is behind '${BASE_REF}' and contains migration files."
+            echo ""
+            echo "Why this check exists:"
+            echo "  Two PRs can independently create the same migration number"
+            echo "  (e.g. both add 0009_*.py). At deploy time 'manage.py migrate'"
+            echo "  fails because the migration graph has two files claiming the"
+            echo "  same slot. By requiring migration PRs to include the latest"
+            echo "  '${BASE_REF}' before merging, the collision surfaces locally"
+            echo "  -- where makemigrations will renumber it -- instead of taking"
+            echo "  down a deploy."
+            echo ""
+            echo "How to fix:"
+            echo "  1. Update your branch: git fetch origin && git rebase origin/${BASE_REF}"
+            echo "     (or click 'Update branch' on the PR page)"
+            echo "  2. Re-run makemigrations if there is a conflict: python manage.py makemigrations"
+            echo "  3. Push -- this check will re-run and pass."
+            echo ""
+            echo "::error::Migration PR is behind '${BASE_REF}'. Update your branch" \
+              "(rebase or merge) to resolve any migration number conflicts before merging."
+            exit 1
+          fi
+
+          echo "PR is up-to-date with '${BASE_REF}' -- migration check passed."
+
+  # ------------------------------------------------------------------ #
+  # Job 3: When main moves forward (a migration PR just merged), find   #
+  # all other open PRs that also touch migrations and re-run their      #
+  # migration-up-to-date check. This ensures they are forced to update  #
+  # before they too can merge.                                          #
+  # ------------------------------------------------------------------ #
+  restage-migration-prs:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      actions: write
+      pull-requests: read
+
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { owner, repo } = context.repo;
+
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', base: 'main', per_page: 100,
+            });
+
+            for (const pr of prs) {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number: pr.number, per_page: 100,
+              });
+
+              const touchesMigrations = files.some(f =>
+                /\/migrations\/[0-9][^/]*\.py$/.test(f.filename) &&
+                !/\/tests\/migrations\//.test(f.filename)
+              );
+
+              if (!touchesMigrations) continue;
+
+              core.info(`PR #${pr.number} touches migrations -- looking for a run to re-trigger`);
+
+              // Find the most recent Migrations workflow run for this PR's head SHA
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                owner,
+                repo,
+                event: 'pull_request',
+                head_sha: pr.head.sha,
+                per_page: 10,
+              });
+
+              const migrationsRun = runs.data.workflow_runs.find(r => r.name === 'Migrations');
+              if (!migrationsRun) {
+                core.warning(`No Migrations workflow run found for PR #${pr.number} @ ${pr.head.sha}`);
+                continue;
+              }
+
+              // Find the migration-up-to-date job within that run
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                owner, repo, run_id: migrationsRun.id, filter: 'latest', per_page: 100,
+              });
+
+              const job = jobs.find(j => j.name === 'migration-up-to-date');
+              if (!job) {
+                core.warning(`No migration-up-to-date job in run ${migrationsRun.id} for PR #${pr.number}`);
+                continue;
+              }
+
+              try {
+                await github.rest.actions.reRunJobForWorkflowRun({ owner, repo, job_id: job.id });
+                core.info(`Re-ran migration-up-to-date for PR #${pr.number}`);
+              } catch (e) {
+                core.warning(`Could not re-run migration-up-to-date for PR #${pr.number}: ${e.message}`);
+              }
+            }
