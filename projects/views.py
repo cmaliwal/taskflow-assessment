@@ -1,7 +1,8 @@
 import logging
 
 from django.db.models import Count, Q, QuerySet
-from rest_framework import viewsets
+from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
+from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -41,6 +42,21 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return ProjectDetailSerializer
         return ProjectWriteSerializer
 
+    @extend_schema(
+        responses={
+            200: inline_serializer(
+                name="ProjectSummary",
+                fields={
+                    "id": serializers.UUIDField(),
+                    "name": serializers.CharField(),
+                    "total_tasks": serializers.IntegerField(),
+                    "completed_tasks": serializers.IntegerField(),
+                    "completion_rate": serializers.FloatField(),
+                },
+            ),
+            404: OpenApiResponse(description="Project not found"),
+        }
+    )
     @action(detail=True, methods=["get"])
     def summary(self, request: Request, pk: str | None = None) -> Response:
         """Return task totals for a project computed in a single annotated query."""
