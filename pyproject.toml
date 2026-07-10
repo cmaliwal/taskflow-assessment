@@ -41,3 +41,18 @@ ignore_errors = true
 
 [tool.django-stubs]
 django_settings_module = "taskflow.settings"
+
+[tool.coverage.run]
+source = ["common", "projects", "taskflow"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "conftest.py",
+    "manage.py",
+    "taskflow/asgi.py",
+    "taskflow/wsgi.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
