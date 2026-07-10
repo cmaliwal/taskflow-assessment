@@ -32,7 +32,7 @@ def test_create_project_returns_201(api_client: APIClient, db) -> None:
 def test_create_project_blank_name_returns_400(api_client: APIClient) -> None:
     response = api_client.post("/api/projects/", {"name": "   "}, format="json")
     assert response.status_code == 400
-    assert "name" in response.json()
+    assert "name" in response.json()["errors"]
 
 
 def test_list_projects_is_paginated_with_task_count(
