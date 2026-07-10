@@ -57,6 +57,9 @@ class Project(BaseModel):
         indexes = BaseModel.Meta.indexes + [
             models.Index(fields=["status", "-created"]),
         ]
+        constraints = [
+            models.UniqueConstraint(fields=["name"], name="project_name_unique"),
+        ]
 
     def __str__(self) -> str:
         return self.name
