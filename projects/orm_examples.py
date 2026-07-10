@@ -8,7 +8,7 @@ without running the code. The regression suite in
 
 import logging
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Max, Q, QuerySet
 
 from projects.models import Project, Task
 
@@ -26,6 +26,7 @@ def projects_with_task_stats() -> QuerySet[Project]:
         for project in Project.objects.all():
             total = project.tasks.count()
             done = project.tasks.filter(is_complete=True).count()
+            latest = project.tasks.order_by('-due_date').first()
 
     Pushing the aggregation into the database with ``annotate`` collapses that
     into a single ``GROUP BY`` query.
@@ -33,6 +34,7 @@ def projects_with_task_stats() -> QuerySet[Project]:
     return Project.objects.annotate(
         total_tasks=Count("tasks"),
         completed_tasks=Count("tasks", filter=Q(tasks__is_complete=True)),
+        latest_due_date=Max("tasks__due_date"),
     )
 
 

@@ -115,7 +115,7 @@ def test_create_project_duplicate_name_returns_400(api_client: APIClient) -> Non
     Project.objects.create(name="Alpha")
     response = api_client.post("/api/projects/", {"name": "Alpha"}, format="json")
     assert response.status_code == 400
-    assert "name" in response.json()
+    assert "name" in response.json()["errors"]
 
 
 @pytest.mark.django_db
@@ -132,7 +132,5 @@ def test_update_project_same_name_allowed(api_client: APIClient) -> None:
     from projects.models import Project
 
     project = Project.objects.create(name="Alpha")
-    response = api_client.patch(
-        f"/api/projects/{project.pk}/", {"name": "Alpha"}, format="json"
-    )
+    response = api_client.patch(f"/api/projects/{project.pk}/", {"name": "Alpha"}, format="json")
     assert response.status_code == 200

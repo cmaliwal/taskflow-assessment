@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 
 from projects.models import Project, Task
@@ -14,7 +16,15 @@ def seeded(db) -> list[Project]:
     projects = [Project.objects.create(name=f"Project {i}") for i in range(3)]
     for project in projects:
         Task.objects.bulk_create(
-            [Task(project=project, title=f"Task {j}", is_complete=j == 0) for j in range(4)]
+            [
+                Task(
+                    project=project,
+                    title=f"Task {j}",
+                    is_complete=j == 0,
+                    due_date=datetime.date(2026, 7, j + 1),
+                )
+                for j in range(4)
+            ]
         )
     return projects
 
@@ -24,10 +34,15 @@ def test_projects_with_task_stats_uses_single_query(
 ) -> None:
     with django_assert_num_queries(1):
         # django-stubs cannot see runtime annotations inside .values().
-        rows = list(projects_with_task_stats().values("name", "total_tasks", "completed_tasks"))  # type: ignore[misc]
+        rows = list(
+            projects_with_task_stats().values(  # type: ignore[misc]
+                "name", "total_tasks", "completed_tasks", "latest_due_date"
+            )
+        )
     assert len(rows) == 3
     assert all(row["total_tasks"] == 4 for row in rows)
     assert all(row["completed_tasks"] == 1 for row in rows)
+    assert all(row["latest_due_date"] == datetime.date(2026, 7, 4) for row in rows)
 
 
 def test_tasks_with_projects_avoids_n_plus_one(
