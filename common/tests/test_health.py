@@ -23,3 +23,18 @@ def test_readiness_check_returns_200_when_db_reachable(api_client: APIClient, db
     response = api_client.get("/health/ready/")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_schema_endpoint_returns_200(api_client: APIClient) -> None:
+    response = api_client.get("/api/schema/")
+    assert response.status_code == 200
+
+
+def test_swagger_ui_returns_200(api_client: APIClient) -> None:
+    response = api_client.get("/api/docs/")
+    assert response.status_code == 200
+
+
+def test_redoc_returns_200(api_client: APIClient) -> None:
+    response = api_client.get("/api/redoc/")
+    assert response.status_code == 200

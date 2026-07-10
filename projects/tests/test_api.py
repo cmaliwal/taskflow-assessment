@@ -32,7 +32,7 @@ def test_create_project_returns_201(api_client: APIClient, db) -> None:
 def test_create_project_blank_name_returns_400(api_client: APIClient) -> None:
     response = api_client.post("/api/projects/", {"name": "   "}, format="json")
     assert response.status_code == 400
-    assert "name" in response.json()
+    assert "name" in response.json()["errors"]
 
 
 def test_list_projects_is_paginated_with_task_count(
@@ -106,3 +106,33 @@ def test_project_summary_counts_tasks(
 def test_project_summary_missing_project_returns_404(api_client: APIClient, db) -> None:
     response = api_client.get("/api/projects/00000000-0000-0000-0000-000000000000/summary/")
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_create_project_duplicate_name_returns_400(api_client: APIClient) -> None:
+    from projects.models import Project
+
+    Project.objects.create(name="Alpha")
+    response = api_client.post("/api/projects/", {"name": "Alpha"}, format="json")
+    assert response.status_code == 400
+    assert "name" in response.json()
+
+
+@pytest.mark.django_db
+def test_create_project_duplicate_name_case_insensitive_returns_400(api_client: APIClient) -> None:
+    from projects.models import Project
+
+    Project.objects.create(name="Alpha")
+    response = api_client.post("/api/projects/", {"name": "alpha"}, format="json")
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_update_project_same_name_allowed(api_client: APIClient) -> None:
+    from projects.models import Project
+
+    project = Project.objects.create(name="Alpha")
+    response = api_client.patch(
+        f"/api/projects/{project.pk}/", {"name": "Alpha"}, format="json"
+    )
+    assert response.status_code == 200

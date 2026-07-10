@@ -37,7 +37,7 @@ class ProjectManager(models.Manager["Project"]):
 class Project(BaseModel):
     """A project that groups related tasks."""
 
-    objects: ProjectManager = ProjectManager()  # type: ignore[assignment]
+    objects: ProjectManager = ProjectManager()
 
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
@@ -56,6 +56,9 @@ class Project(BaseModel):
     class Meta(BaseModel.Meta):
         indexes = BaseModel.Meta.indexes + [
             models.Index(fields=["status", "-created"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["name"], name="project_name_unique"),
         ]
 
     def __str__(self) -> str:

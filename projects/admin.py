@@ -14,12 +14,12 @@ class ProjectAdmin(admin.ModelAdmin):
     readonly_fields = ("id", "created", "modified")
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[Project]:
-        return super().get_queryset(request).annotate(_task_count=Count("tasks"))
+        return super().get_queryset(request).annotate(_task_count=Count("tasks"))  # type: ignore[no-any-return]
 
     @admin.display(description="Tasks", ordering="_task_count")
     def task_count(self, obj: Project) -> int:
         # _task_count is annotated in get_queryset above.
-        return obj._task_count  # type: ignore[attr-defined]
+        return int(obj._task_count)  # type: ignore[attr-defined]
 
 
 @admin.register(Task)
