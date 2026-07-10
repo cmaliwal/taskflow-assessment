@@ -29,7 +29,7 @@ class RequestIdMiddleware:
         request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
         token = request_id_var.set(request_id)
         try:
-            response = self.get_response(request)
+            response: HttpResponse = self.get_response(request)
         finally:
             request_id_var.reset(token)
         response["X-Request-ID"] = request_id
