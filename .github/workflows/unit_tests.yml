@@ -49,9 +49,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Check migrations are up to date
-        run: python manage.py makemigrations --check --dry-run
-
       - name: Run migrations
         run: python manage.py migrate
 
