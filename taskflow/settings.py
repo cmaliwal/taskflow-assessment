@@ -16,6 +16,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "django_filters",
+    "drf_spectacular",
     "common",
     "projects",
 ]
@@ -88,6 +89,15 @@ REST_FRAMEWORK = {
         "rest_framework.filters.OrderingFilter",
         "rest_framework.filters.SearchFilter",
     ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "common.exceptions.taskflow_exception_handler",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Taskflow API",
+    "DESCRIPTION": "REST API for managing projects and their tasks.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
