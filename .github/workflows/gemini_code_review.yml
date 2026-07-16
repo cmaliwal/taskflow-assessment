@@ -50,7 +50,7 @@ jobs:
 
       - name: Post review comment and set PR review status
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           HAS_BLOCKING: ${{ env.HAS_BLOCKING }}
         with:
