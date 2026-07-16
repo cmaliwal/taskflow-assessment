@@ -46,7 +46,7 @@ jobs:
         run: python .github/scripts/gemini_release_notes.py
 
       - name: Update PR description with release notes
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ github.token }}
           script: |
